@@ -1,0 +1,128 @@
+#!/bin/bash
+
+# @yaml
+# signature: building_check <binary1> [<binary2> ...]
+# docstring: Check if the given binary(s) is built with sanitizers or linked with a fuzzer and consume input.
+# arguments:
+#   binary1:
+#     type: string
+#     description: the paths to the binary to check
+#     required: true
+#   binary2 ...:
+#     type: string
+#     description: the paths to the binary to check
+#     required: false
+building_check() {
+    if [[ "$#" -eq 0 ]]; then
+        echo "Usage: building_check <path to target binary1> [<path to target binary2> ...]"
+        return 1
+    fi
+
+    # Check for required tools
+    for tool in ldd readelf nm objdump strings; do
+        if ! command -v "$tool" &>/dev/null; then
+            echo "Error: Required tool '$tool' is not installed or not in PATH."
+            return 1
+        fi
+    done
+
+    for target_binary in "$@"; do
+        if [[ ! -x "$target_binary" ]]; then
+            echo "Error: '$target_binary' is not an executable file or does not exist."
+            continue
+        fi
+
+        echo "Analyzing binary: '$target_binary'..."
+
+        detected_features=()
+        consumes_input="No"  # Default value
+        consume_input_messages=()
+
+        # Fuzzer instrumentation checks
+        echo "Performing fuzzer instrumentation checks..."
+        # 1. Check with ldd for dynamic libraries
+        if ldd "$target_binary" 2>/dev/null | grep -iE "libfuzzer|libafl|honggfuzz|asan|ubsan" >/dev/null; then
+            detected_features+=("Linked with sanitizer/fuzzer-related library (ldd)")
+        fi
+
+        # 2. Check with readelf for dynamic dependencies
+        if readelf -d "$target_binary" 2>/dev/null | grep -iE "NEEDED.*(libfuzzer|libafl|honggfuzz|asan|ubsan)" >/dev/null; then
+            detected_features+=("Linked with sanitizer/fuzzer-related library (readelf)")
+        fi
+
+        # 3. Check with nm for common fuzzing symbols
+        if nm "$target_binary" 2>/dev/null | grep -iE "LLVMFuzzerTestOneInput|LLVMFuzzerInitialize|__sanitizer_coverage|__sanitizer_cov" >/dev/null; then
+            detected_features+=("Contains LibFuzzer or sanitizer-related symbols (nm)")
+        fi
+        if nm "$target_binary" 2>/dev/null | grep -iE "__afl_area_ptr|__afl_prev_loc|__afl_fuzz_" >/dev/null; then
+            detected_features+=("Contains AFL-related symbols (nm)")
+        fi
+
+        # 4. Check with objdump for symbols or sections related to fuzzers
+        if objdump -T "$target_binary" 2>/dev/null | grep -iE "LLVMFuzzerTestOneInput|__afl|honggfuzz" >/dev/null; then
+            detected_features+=("Contains fuzzer-related symbols (objdump -T)")
+        fi
+        if objdump -x "$target_binary" 2>/dev/null | grep -iE "libfuzzer|libafl|honggfuzz|asan|ubsan" >/dev/null; then
+            detected_features+=("Contains sanitizer/fuzzer-related sections (objdump -x)")
+        fi
+
+        # 5. Check with strings for specific fuzzing-related content
+        if strings "$target_binary" 2>/dev/null | grep -iE "AFL_POST_LIBRARY|AFL_PRELOAD|HF_ITER|LLVMFuzzerTestOneInput|SanitizerCoverage|asan|ubsan" >/dev/null; then
+            detected_features+=("Contains fuzzing-related strings (strings)")
+        fi
+
+        # 6. AFL-specific instrumentation detection
+        if strings "$target_binary" 2>/dev/null | grep -q "__afl_area_ptr"; then
+            detected_features+=("Instrumented for AFL/AFL++ (__afl_area_ptr)")
+        fi
+
+        # 7. honggfuzz-specific instrumentation detection
+        if strings "$target_binary" 2>/dev/null | grep -q "HF_ITER"; then
+            detected_features+=("Instrumented for honggfuzz (HF_ITER)")
+        fi
+
+        # 8. LibFuzzer-specific symbol detection
+        if strings "$target_binary" 2>/dev/null | grep -q "LLVMFuzzerTestOneInput"; then
+            detected_features+=("Instrumented for LibFuzzer (LLVMFuzzerTestOneInput)")
+        fi
+
+        # Consume input checks
+        echo "Performing consume input checks..."
+        if readelf -s "$target_binary" 2>/dev/null | grep -iE "\s(read|getline)@" || strings "$target_binary" 2>/dev/null | grep -q "argv"; then
+            consume_input_messages+=("Consumes input via stdin or argv (readelf/strings)")
+            consumes_input="Yes"
+        else
+            consume_input_messages+=("Does not consume input via stdin or argv (readelf/strings)")
+        fi
+
+        # Output fuzzer instrumentation results
+        echo "Fuzzer instrumentation detected in '$target_binary':"
+        if [[ "${#detected_features[@]}" -gt 0 ]]; then
+            for feature in "${detected_features[@]}"; do
+                echo "  - $feature"
+            done
+        else
+            echo "  - No fuzzer or sanitizer instrumentation detected."
+            echo "  * Suggestion: Check the building process to ensure fuzzer instrumentation is implemented and rebuild if necessary."
+        fi
+
+        # Output consume input results
+        echo "Consume input check results for '$target_binary':"
+        if [[ "${#consume_input_messages[@]}" -gt 0 ]]; then
+            for message in "${consume_input_messages[@]}"; do
+                echo "  - $message"
+            done
+        fi
+
+        # Suggestion if consume input is "No"
+        if [[ "$consumes_input" == "No" ]]; then
+            echo "  * Suggestion: Check the building process to ensure input consumption is implemented and rebuild if necessary."
+        fi
+
+        echo ""
+    done
+
+    return 0
+}
+
+building_check "$@"

@@ -1,0 +1,79 @@
+# Docker environment flag
+# True: 1, False: 0
+docker: 1
+
+# Environment variables
+env_variables:
+  CURRENT_FILE: ""
+  CURRENT_LINE: "0"
+  OVERLAP: "2"
+  SEARCH_FILES: ()
+  SEARCH_INDEX: "0"
+  SEARCH_RESULTS: ()
+  WINDOW: "100"
+  OUTPUT_LINES: 200
+  COMMAND_TIMEOUT: 10
+  FUZZER_OBSERVATION_INTERVAL: 10
+
+# LLM API arguments
+llm_args:
+  LLM_MODEL: "random"
+  LLM_REPLY_TIMEOUT: 60
+  LLM_TEMPERATURE: 0.25
+
+# For real local machine
+command_files_opposite:
+  - tools/file/bin/defaults.sh
+  - tools/file/bin/find_file
+  - tools/file/bin/goto
+  - tools/file/bin/open
+  - tools/file/bin/scroll_down
+  - tools/file/bin/scroll_up
+  - tools/file/bin/search_dir
+  - tools/file/bin/search_file
+  - tools/binary/external/building_check
+
+# Agent optput files (temporary)
+agent_outputs_opposite:
+  builder_output_file: working_dir/builder_output.txt
+  executer_output_file: working_dir/executer_output.txt
+  harness_generator_output_file: working_dir/harness_generator_output.txt
+  seed_generator_output_file: working_dir/seed_generator_output.txt
+  crash_analyzer_output_file: working_dir/crash_analyzer_output.txt
+  manager_output_file: working_dir/manager_output.txt
+  dictionary_output_file: working_dir/dictionary_out.txt
+
+# For Docker container
+command_files_absolute:
+  - /home/FuzzAgent/tools/file/bin/defaults.sh
+  - /home/FuzzAgent/tools/file/bin/find_file
+  - /home/FuzzAgent/tools/file/bin/goto
+  - /home/FuzzAgent/tools/file/bin/open
+  - /home/FuzzAgent/tools/file/bin/scroll_down
+  - /home/FuzzAgent/tools/file/bin/scroll_up
+  - /home/FuzzAgent/tools/file/bin/search_dir
+  - /home/FuzzAgent/tools/file/bin/search_file
+  - /home/FuzzAgent/tools/binary/external/building_check
+
+# Agent optput files (temporary)
+agent_outputs_absolute:
+  builder_output_file: /home/FuzzAgent/working_dir/builder_output.txt
+  executer_output_file: /home/FuzzAgent/working_dir/executer_output.txt
+  harness_generator_output_file: /home/FuzzAgent/working_dir/harness_generator_output.txt
+  seed_generator_output_file: /home/FuzzAgent/working_dir/seed_generator_output.txt
+  crash_analyzer_output_file: /home/FuzzAgent/working_dir/crash_analyzer_output.txt
+  manager_output_file: /home/FuzzAgent/working_dir/manager_output.txt
+  dictionary_out_file: /home/FuzzAgent/working_dir/dictionary_out.txt
+
+# State Command used in ACI bash
+state_command:
+  name: state
+  code: |
+    state() {
+      local working_dir="$PWD";
+      if [ -z "$CURRENT_FILE" ]; then
+          echo '{"open_file": "n/a", "working_dir": "'$working_dir'"}';
+      else
+          echo '{"open_file": "'$(realpath "$CURRENT_FILE")'", "working_dir": "'$working_dir'"}';
+      fi
+    };
